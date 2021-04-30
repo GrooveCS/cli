@@ -1,0 +1,110 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  GIT_COMMIT:
+    sh: git log -n 1 --format=%h
+
+  GO_PACKAGES:
+    sh: go list ./...
+
+  GO_PACKAGES_CORE:
+    sh: go list ./... | grep -v /vendor/
+
+env:
+  CGO_ENABLED: "0"
+
+tasks:
+  default:
+    cmds:
+      - task: clean
+
+  install:
+    desc: Install tkn
+    cmds:
+      - go install -v -ldflags="-w -s -X main.version={{.GIT_COMMIT}}" ./cmd/tkn
+
+  mod:
+    desc: Downloads and tidy Go modules
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  cli-deps:
+    desc: Downloads CLI dependencies
+    cmds:
+      - task: go-get
+        vars: {REPO: golang.org/x/lint/golint}
+      - task: go-get
+        vars: {REPO: github.com/goreleaser/goreleaser}
+
+  clean:
+    desc: Cleans temp files and folders
+    cmds:
+      - rm -rf dist/
+
+  lint:
+    desc: Runs golint
+    cmds:
+      - golint {{catLines .GO_PACKAGES}}
+    silent: true
+
+  format:
+    desc: Runs golint
+    cmds:
+      - go fmt {{catLines .GO_PACKAGES_CORE}}
+    silent: true
+
+  lint-go:
+    desc: Linting go files...
+    cmds:
+      - task: go-get
+        vars: {REPO: github.com/golangci/golangci-lint}
+      - golangci-lint run {{catLines .GO_PACKAGES}} --modules-download-mode=vendor --max-issues-per-linter=0 --max-same-issues=0 --deadline 5m
+
+  test:
+    desc: Runs test suite
+    deps: [install]
+    cmds:
+      - go test {{catLines .GO_PACKAGES}}
+
+  test-unit:
+    desc: Run unit tests
+    cmds:
+      - go test -failfast -v -cover {{catLines .GO_PACKAGES}}
+
+  test-release:
+    desc: Tests release process without publishing
+    cmds:
+      - goreleaser --snapshot --rm-dist
+
+  vendor:
+    desc: Run go mod vendor
+    cmds:
+      - go mod vendor
+
+  ci:
+    - task: go-get
+      vars: {REPO: golang.org/x/lint/golint}
+    - task: lint
+    - task: test
+
+  check:
+    desc: Runs lint & test
+    cmds:
+      - task: lint
+      - task: test
+
+  go-get: go get -u {{.REPO}}
+
+  update-golden:
+    desc: run unit tests (updating golden files)
+    cmds:
+      - bash -l ./hack/update-golden.sh
+
+
+  packages:
+    cmds:
+      - echo '{{.GO_PACKAGES}}'
+    silent: true
